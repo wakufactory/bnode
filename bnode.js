@@ -220,6 +220,7 @@ BNode.regist = function(THREE) {
 			}
 		}
 		)
+
 	BNode.registerNode("Timer",
 		function(param){
 			this.name = "Timer"
@@ -240,6 +241,26 @@ BNode.regist = function(THREE) {
 			}
 		}
 		)
+	BNode.registerNode("Input",
+		function(param){
+			this.name = "Input"
+			this.input = param.input 
+			for(let k in this.input) {
+				this.outsock[k] = new BNode.Socket(k,this,"out","scalar")
+			}
+			this.output = {} 
+			POXA.setUIproperty(this,this.input,p=>{
+				this.output[p.key] = p.value 
+			})
+		},{
+			eval:function() {
+				for(let k in this.input) {
+					this.outsock[k].setval(this.output[k])
+				}
+			}
+		}
+	)
+
 	BNode.registerNode("CreateInstance",
 		function(param){
 			this.name = "CreateInstance"
@@ -248,6 +269,7 @@ BNode.regist = function(THREE) {
 			this.outsock['instance'] = new BNode.Socket("instance",this,"out","instance")
 			this.outsock['index'] = new BNode.Socket("index",this,"out","scalar")
 			this.outsock['iindex'] = new BNode.Socket("iindex",this,"out","scalar")
+			this.outsock['count'] = new BNode.Socket("count",this,"out","scalar")
 		},{
 			"eval":function() {
 				if(!BNode.Node.prototype.eval.call(this)) return 
@@ -261,7 +283,7 @@ BNode.regist = function(THREE) {
 					idx.push(i) 
 					iidx.push(i/count)
 				}
-				
+				this.outsock.count.setval(count)
 				this.outsock.instance.setval(inst)
 				this.outsock.index.setval(idx)
 				this.outsock.iindex.setval(iidx)
@@ -338,10 +360,12 @@ BNode.regist = function(THREE) {
 			}	
 		}
 		)
+
 	BNode.registerNode("Math",
 		function(param){
 			this.name = "Math"
-			precode = ( param.output.precode)?param.output.precode:""
+			let precode = ( param.precode)?param.precode:""
+			if(Array.isArray(precode)) precode = precode.join("")
 			this.result = {} 
 			this.funcs = {} 
 			for(let n in param.input) {
@@ -349,19 +373,12 @@ BNode.regist = function(THREE) {
 			}
 			this.invalue = [...Object.keys(this.insock)] 
 			for(let n in param.output) {
-				this.outsock[n] = new BNode.Socket(n,this,"out",param.output[n].type)	
-				this.result[n] = param.output[n].result 
-				if(Array.isArray(this.result[n])) {
-					const fs = []
-					for(let i=0;i<this.result[n].length;i++) {
-						try {
-							const f = new Function(...this.invalue,precode+"; return "+this.result[n][i] )
-							fs.push(f)
-						} catch(err) {console.log("eva func");throw({msg:"eval function",err:err})}
-					}
-					this.funcs[n] = fs 
+				let code = param.output[n].value
+				if(Array.isArray(code)) {
+					code = "["+code.join(",")+"]"
 				}
-				else this.funcs[n] = new Function(...this.invalue,precode+"; return "+this.result[n] )
+				this.outsock[n] = new BNode.Socket(n,this,"out",param.output[n].type)	
+				this.funcs[n] = new Function(...this.invalue,"allinput","index",'"use strict";'+precode+"; return "+code )
 			}
 			this.result = this.outsock.result
 		},{
@@ -370,7 +387,6 @@ BNode.regist = function(THREE) {
 				let ic = 0 
 				for(let n in this.insock) {
 					const v = this.insock[n].value 
-//					if(v == null) return 
 					if(Array.isArray(v) && v.length>ic) ic=v.length  
 				}
 						
@@ -378,19 +394,21 @@ BNode.regist = function(THREE) {
 				let result 
 				if(ic>0) {
 					result = [] 
+					allinput = {}
+					for(let n in this.insock) {
+						allinput[n] = this.insock[n].value
+					}
 					for(let i=0;i<ic;i++) {
 						const val = [] 
-						for(let n in this.insock) {
-							const v = this.insock[n].value
-							if(Array.isArray(v)) val.push(v[i])
+						for(let n in allinput) {
+							const v = allinput[n]
+							if(Array.isArray(v)) {
+								if(v.length<ic) val.push(v[i%v.length])
+								else val.push(v[i])
+							}
 							else val.push(v) 
 						}
-						if(Array.isArray(fn)) {
-							const vv = []
-							for(let j=0;j<fn.length;j++) vv.push((fn[j]).call(this,...val))
-							result.push(vv)
-						}
-						else result.push( (fn).call(this,...val))
+						result.push( (fn).call(this,...val,allinput,i))
 					}
 				} else {
 					const val = [] 
@@ -398,18 +416,14 @@ BNode.regist = function(THREE) {
 						const v = this.insock[n].value
 						val.push(v) 
 					}
-					if(Array.isArray(fn)) {
-						const vv = []
-						for(let j=0;j<fn.length;j++) vv.push((fn[j]).call(this,...val))
-						result = vv
-					}
-					else result = (fn).call(this,...val)				
+					result = (fn).call(this,...val,null,0)				
 				}
 //				console.log("result ",result)
 				this.outsock.result.setval(result)
 			}
 		}
 	)
+
 	BNode.registerNode("ScaleMatrix",
 		function(param) {
 			this.name = "ScaleMatrix"
