@@ -43,6 +43,7 @@ BNode.Node.prototype.evalchild = function(socket) {
 BNode.Node.prototype.getinnode = function() {
 	for(let n in this.insock) {
 //		console.log("get sock ",n)
+		if(this.insock[n]===undefined) continue 
 		if(this.insock[n].delayed) {
 //			console.log("deleyed")
 			continue
@@ -78,13 +79,15 @@ BNode.Socket.prototype.setjoint = function(joint) {
 
 //register new node 
 BNode.registerNode = function(type,prot,methods) {
+	//constructor function
 	let node = function(param) {
-		BNode.Node.call(this,param)
-		prot.call(this,param)
-		for(let m in methods) {
+		BNode.Node.call(this,param)	//call base constructor
+		prot.call(this,param)		//call constructor
+		for(let m in methods) {	//add methods
 			node.prototype[m] = methods[m] 
 		}
 	}
+	// prototype inherit 
 	node.prototype = Object.create(BNode.Node.prototype)
 	node.prototype.constructor = BNode.Node
 	BNode.Nodes[type] = node 
@@ -94,9 +97,9 @@ BNode.registerNode = function(type,prot,methods) {
 BNode.createNode = function(type,param,id) {
 	const n = new BNode.Nodes[type](param)
 	n.id = id 
-	if(param && param.value) {
-		for(let v in param.value) {
-			n.insock[v].setval(param.value[v])
+	if(param && param.default) {
+		for(let v in param.default) {
+			n.insock[v].setval(param.default[v])
 		}
 	}
 	console.log(n)
@@ -145,6 +148,7 @@ BNode.regist = function(THREE) {
 		},
 		{
 			"eval":function() {
+				if(!BNode.Node.prototype.eval.call(this)) return 
 				let mesh 
 				const param = this.param 
 				if(param.mesh ) {
@@ -221,14 +225,18 @@ BNode.regist = function(THREE) {
 			this.name = "Timer"
 			this.value = null
 			this.stime =  new Date().getTime()
+			this.dtime = 0
 			this.outsock['result'] = new BNode.Socket("result",this,"out","scalar")
+			this.outsock['delta'] = new BNode.Socket("delta",this,"out","scalar")
 			this.result = this.outsock.result
 		},
 		{
 			"eval":function() {
 				if(!BNode.Node.prototype.eval.call(this)) return 
 				const v = (new Date().getTime() - this.stime )
-				this.outsock.result.setval(v)  
+				this.outsock.result.setval(v)
+				this.outsock.delta.setval(v-this.dtime)
+				this.dtime = v 
 			}
 		}
 		)
@@ -365,21 +373,37 @@ BNode.regist = function(THREE) {
 //					if(v == null) return 
 					if(Array.isArray(v) && v.length>ic) ic=v.length  
 				}
-				const result = [] 
-				for(let i=0;i<ic;i++) {
+						
+				const fn = this.funcs['result']
+				let result 
+				if(ic>0) {
+					result = [] 
+					for(let i=0;i<ic;i++) {
+						const val = [] 
+						for(let n in this.insock) {
+							const v = this.insock[n].value
+							if(Array.isArray(v)) val.push(v[i])
+							else val.push(v) 
+						}
+						if(Array.isArray(fn)) {
+							const vv = []
+							for(let j=0;j<fn.length;j++) vv.push((fn[j]).call(this,...val))
+							result.push(vv)
+						}
+						else result.push( (fn).call(this,...val))
+					}
+				} else {
 					const val = [] 
 					for(let n in this.insock) {
 						const v = this.insock[n].value
-						if(Array.isArray(v)) val.push(v[i])
-						else val.push(v) 
+						val.push(v) 
 					}
-					const fn = this.funcs['result']
 					if(Array.isArray(fn)) {
 						const vv = []
 						for(let j=0;j<fn.length;j++) vv.push((fn[j]).call(this,...val))
-						result.push(vv)
+						result = vv
 					}
-					else result.push( (fn).call(this,...val))
+					else result = (fn).call(this,...val)				
 				}
 //				console.log("result ",result)
 				this.outsock.result.setval(result)
@@ -414,8 +438,93 @@ BNode.regist = function(THREE) {
 			}
 		}
 	)
-}
 
+	BNode.registerNode("Delay",
+		function(param){
+			this.name = "Delay"
+			this.insock['input'] = new BNode.Socket("input",this,"in","any",true)
+			this.outsock['result'] = new BNode.Socket("result",this,"out","any")
+			this.result = this.outsock.result
+			this.vstack = null
+		},
+		{
+			"eval":function(v) {
+				if(!BNode.Node.prototype.eval.call(this)) return 
+				let out = null 
+				if(this.vstack!==null) out = structuredClone(this.vstack) 
+				this.outsock.result.setval(out)
+			},
+			"posteval":function() {
+				this.vstack = structuredClone(this.joints.input.getval())				
+			}
+		}
+		)	
+	BNode.registerNode("MeshMatrix",
+		function(param) {
+			this.name = "MeshMatrix"
+			this.insock['mesh'] = new BNode.Socket("mesh",this,"in","instance")
+			this.insock['scale'] = new BNode.Socket("scale",this,"in","vec3")
+			this.insock['euler'] = new BNode.Socket("euler",this,"in","vec3")
+			this.insock['matrix'] = new BNode.Socket("matrix",this,"in","mat4")
+			this.insock['translate'] = new BNode.Socket("translate",this,"in","vec3")
+			this.outsock['mesh'] = new BNode.Socket("mesh",this,"out","instance")
+			this.result = this.outsock['mesh'] 
+		},
+		{
+			"eval":function() {
+				if(!BNode.Node.prototype.eval.call(this)) return 
+				const mtx = new THREE.Matrix4() 
+				const mtx1 = new THREE.Matrix4()
+				const mtx2 = new THREE.Matrix4()
+				const mtx3 = new THREE.Matrix4()
+				
+				let ini = this.insock.mesh.getval()
+				let bmtx = this.insock.matrix.getval()
+				if(bmtx===null) bmtx = new THREE.Matrix4() 
+				const ins = this.insock.scale.getval()
+				const ine = this.insock.euler.getval()
+				const intr = this.insock.translate.getval()
+		
+					if(ins) {
+						const sc = Array.isArray(ins)?ins:[ins,ins,ins]
+						ini.scale.copy(new THREE.Vector3(...ins))
+					}
+					if(ine) {
+						ini.setRotationFromEuler(new THREE.Euler(...ine))
+					}
+					if(intr) {
+						const tr = Array.isArray(intr)?intr:[intr,intr,intr]
+						ini.position.copy(new THREE.Vector3(...tr))
+					}
+
+				this.result.setval(ini)
+			}	
+		}
+		)
+
+}
+BNode.evalnode = function(nodes) {
+	const result = [] 
+	for(let n in nodes) {
+		const node = nodes[n].obj
+		if(node.name=="Output") {
+			node.eval() 
+			result.push(node.result.value)
+		}
+	}
+	for(let n in nodes) {
+		const node = nodes[n].obj	
+		if(node.posteval) {
+			node.posteval() 
+		}
+		node.evaled = false 
+	}
+	for(let i=0;i<result.length;i++) {
+		if(result[i].instanceMatrix) result[i].instanceMatrix.needsUpdate = true;
+		if(result[i].instanceColor) result[i].instanceColor.needsUpdate = true;
+	}
+	return result 
+}
 
 
 BNode.createMesh = function(shape="sphere") {
