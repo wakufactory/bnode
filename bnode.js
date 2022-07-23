@@ -35,11 +35,7 @@ BNode.Node.prototype.eval = function(value) {
 		this.getinnode()
 		return true
 	}
-BNode.Node.prototype.evalchild = function(socket) {
-		socket.joints.forEach(j=>{
-			j.eval(socket.getval())
-		})
-	}
+
 BNode.Node.prototype.getinnode = function() {
 	for(let n in this.insock) {
 //		console.log("get sock ",n)
@@ -157,6 +153,7 @@ BNode.regist = function(THREE) {
 				let geometry 
 				const radius = (param.radius===undefined)?1:param.radius 
 				const segment = (param.segment===undefined)?32:param.segment 
+				const height = (param.height===undefined)?radius*2:param.height
 				switch(this.shape) {
 					case "sphere":
 						geometry = new THREE.SphereGeometry( radius,segment,segment/2 );
@@ -172,12 +169,14 @@ BNode.regist = function(THREE) {
 					case "cylinder":
 						let rtop = radius
 						let rbot = radius
-						let height = radius 
 						if(param.radiustop!==undefined) rtop = param.radiustop
 						if(param.radiusbottom!==undefined) rtop = param.radiusbottom
 						if(param.height!==undefined) rtop = param.height
 						geometry = new THREE.CylinderGeometry(rtop,rbot,height,segment)
 						break
+					case "capsule":
+						geometry = new THREE.CapsuleGeometry(radius,height,4,segment)					
+						break ;
 					case "torus":
 						let tube = 0.2 
 						let tubeseg = 64
@@ -315,7 +314,11 @@ BNode.regist = function(THREE) {
 				const ins = this.insock.scale.getval()
 				const ine = this.insock.euler.getval()
 				const intr = this.insock.translate.getval()
-				for(let i=0;i<ini.count;i++) {
+				let count = 1000000
+				if(ins && ins.length<count) count = ins.length
+				if(ine && ine.length<count) count = ine.length
+				if(intr && intr.length<count) count = intr.length
+				for(let i=0;i<count;i++) {
 					mtx.copy(bmtx)
 					if(ins) {
 						const sc = (Array.isArray(ins[i])?ins[i]:[ins[i],ins[i],ins[i]])
@@ -330,6 +333,7 @@ BNode.regist = function(THREE) {
 					}
 					ini.setMatrixAt( i, mtx )
 				}
+				ini.count = count 
 				this.result.setval(ini)
 			}	
 		}
@@ -408,7 +412,8 @@ BNode.regist = function(THREE) {
 							}
 							else val.push(v) 
 						}
-						result.push( (fn).call(this,...val,allinput,i))
+						const ret = (fn).call(this,...val,allinput,i)
+						if(ret!==null) result.push(ret)
 					}
 				} else {
 					const val = [] 
