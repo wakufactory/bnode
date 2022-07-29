@@ -25,6 +25,9 @@ BNode.Node.prototype.setjoint = function(joint) {
 	this.joints = joint 
 }
 BNode.Node.prototype.eval = function(value) {
+	return true 
+}
+BNode.Node.prototype._eval = function(value) {
 		if(!this.doeval || this.evaled) {
 //			console.log("eval skip "+this.name+" "+this.id)
 			return false
@@ -33,6 +36,12 @@ BNode.Node.prototype.eval = function(value) {
 		this.evaled = true 
 		if(this.evalonce) this.doeval = false 
 		this.getinnode()
+		try {
+			if(this.eval) this.eval()
+		} catch(err) {
+			throw(`node eval error at ${this.id}: ${err}`)
+			return null 
+		}
 		return true
 	}
 
@@ -46,7 +55,7 @@ BNode.Node.prototype.getinnode = function() {
 		} 
 		const tj = this.joints[n]
 		if(tj) {
-			if(tj.parent.eval) tj.parent.eval() 
+			if(tj.parent._eval) tj.parent._eval() 
 			this.insock[n].value = tj.value 
 		}
 	}
@@ -91,40 +100,90 @@ BNode.registerNode = function(type,prot,methods) {
 
 //create node instance
 BNode.createNode = function(type,param,id) {
-	const n = new BNode.Nodes[type](param)
+	let n 
+	try {
+		n = new BNode.Nodes[type](param)
+	} catch(err) {
+		BNode.emsg = (`node init error at ${id}: ${err}`)
+		return null 
+	}
 	n.id = id 
 	if(param && param.default) {
 		for(let v in param.default) {
 			n.insock[v].setval(param.default[v])
 		}
 	}
-	console.log(n)
 	BNode.nodelist.push(n)
 	return n 
 }
+BNode.Nodetree = function() {
+	this.nodes = {} 
+}
+BNode.Nodetree.prototype.setnode = function(id,node) {
+	this.nodes[id] = {obj:node,id:id}
+}
+BNode.Nodetree.prototype.getnode = function(id) {
+	return this.nodes[id].obj 
+}
+BNode.Nodetree.prototype.evalnode = function(id) {
+	this.nodes[id].obj.doeval = true
+}
+BNode.Nodetree.prototype.eval = function() {
+	const result = [] 
 
+	for(let n in this.nodes) {
+		const node = this.nodes[n].obj
+		if(node.name=="Output") {
+			try{
+				node._eval()
+			}catch(err) {
+				BNode.emsg = err 
+				return null 
+			} 
+			result.push(node.result.value)
+		}
+	}
+	for(let n in this.nodes) {
+		const node = this.nodes[n].obj	
+		if(node.posteval) {
+			node.posteval() 
+		}
+		node.evaled = false 
+	}
+	for(let i=0;i<result.length;i++) {
+		if(result[i].instanceMatrix) result[i].instanceMatrix.needsUpdate = true;
+		if(result[i].instanceColor) result[i].instanceColor.needsUpdate = true;
+	}
+	return result 
+}
 //make node tree from data
 BNode.mknode = function(data) {
-	const nodes = {}
+	const nt = new BNode.Nodetree()
 	for(let i=0;i<data.length;i++) {
 		const n = data[i]
-		const ni = {obj:BNode.createNode(n.nodetype,n.param,data[i].id),id:data[i].id}
-		if(ni) nodes[ni.id] = ni 
+		const ni = BNode.createNode(n.nodetype,n.param,data[i].id)
+		if(!ni) return null 
+		nt.setnode(ni.id,ni) 
 	}
 	for(let i=0;i<data.length;i++) {
 		if(!data[i].joint) continue 
 		const jo = data[i].joint 
 		for(let j in jo) {
 			const jn = jo[j].split(".")
-			if(nodes[jn[0]]==undefined) {
-				throw("joint error")
+			if(nt.nodes[jn[0]]==undefined) {
+				BNode.emsg = "joint error at "+data[i].id+":"+jo[j]
+				return null 
 			}
-			else jo[j] = (jn[1]=="result")?nodes[jn[0]].obj.result:nodes[jn[0]].obj.outsock[jn[1]] 
+			else jo[j] = (jn[1]=="result")?nt.nodes[jn[0]].obj.result:nt.nodes[jn[0]].obj.outsock[jn[1]] 
+			if(jo[j]===undefined) {
+				BNode.emsg = "joint error at "+data[i].id+": "+jn[0]+"."+jn[1]
+				return null 				
+			}
 		}
-		nodes[data[i].id].obj.setjoint(jo)
+		if(nt.nodes[data[i].id]) nt.nodes[data[i].id].obj.setjoint(jo)
 	}
 //	console.log(nodes)
-	return nodes 
+	return nt 
 }
 
 // clear eval flag
@@ -144,7 +203,6 @@ BNode.regist = function(THREE) {
 		},
 		{
 			"eval":function() {
-				if(!BNode.Node.prototype.eval.call(this)) return 
 				let mesh 
 				const param = this.param 
 				if(param.mesh ) {
@@ -153,7 +211,7 @@ BNode.regist = function(THREE) {
 				let geometry 
 				const radius = (param.radius===undefined)?1:param.radius 
 				const segment = (param.segment===undefined)?32:param.segment 
-				const height = (param.height===undefined)?radius*2:param.height
+				let height = (param.height===undefined)?radius*2:param.height
 				switch(this.shape) {
 					case "sphere":
 						geometry = new THREE.SphereGeometry( radius,segment,segment/2 );
@@ -170,8 +228,7 @@ BNode.regist = function(THREE) {
 						let rtop = radius
 						let rbot = radius
 						if(param.radiustop!==undefined) rtop = param.radiustop
-						if(param.radiusbottom!==undefined) rtop = param.radiusbottom
-						if(param.height!==undefined) rtop = param.height
+						if(param.radiusbottom!==undefined) rbot = param.radiusbottom
 						geometry = new THREE.CylinderGeometry(rtop,rbot,height,segment)
 						break
 					case "capsule":
@@ -214,7 +271,6 @@ BNode.regist = function(THREE) {
 				this.value = v
 			},
 			"eval":function(v) {
-				if(!BNode.Node.prototype.eval.call(this)) return 
 				this.outsock.result.setval(this.value)  
 			}
 		}
@@ -232,7 +288,6 @@ BNode.regist = function(THREE) {
 		},
 		{
 			"eval":function() {
-				if(!BNode.Node.prototype.eval.call(this)) return 
 				const v = (new Date().getTime() - this.stime )
 				this.outsock.result.setval(v)
 				this.outsock.delta.setval(v-this.dtime)
@@ -271,10 +326,10 @@ BNode.regist = function(THREE) {
 			this.outsock['count'] = new BNode.Socket("count",this,"out","scalar")
 		},{
 			"eval":function() {
-				if(!BNode.Node.prototype.eval.call(this)) return 
 				const count = this.insock.count.value
 				const mesh = this.insock.mesh.value 
 				let inst = new THREE.InstancedMesh( mesh.geometry, mesh.material,count )
+				inst.userData.maxcount = count 
 				let idx = []
 				let iidx = []
 
@@ -302,7 +357,6 @@ BNode.regist = function(THREE) {
 		},
 		{
 			"eval":function() {
-				if(!BNode.Node.prototype.eval.call(this)) return 
 				const mtx = new THREE.Matrix4() 
 				const mtx1 = new THREE.Matrix4()
 				const mtx2 = new THREE.Matrix4()
@@ -314,7 +368,7 @@ BNode.regist = function(THREE) {
 				const ins = this.insock.scale.getval()
 				const ine = this.insock.euler.getval()
 				const intr = this.insock.translate.getval()
-				let count = 1000000
+				let count = ini.userData.maxcount
 				if(ins && ins.length<count) count = ins.length
 				if(ine && ine.length<count) count = ine.length
 				if(intr && intr.length<count) count = intr.length
@@ -349,7 +403,6 @@ BNode.regist = function(THREE) {
 		},
 		{
 			"eval":function() {
-				if(!BNode.Node.prototype.eval.call(this)) return 
 				const oi = []
 				const ini = this.insock.instance.getval()
 				const rgb = this.insock.rgb.getval()
@@ -369,62 +422,70 @@ BNode.regist = function(THREE) {
 		function(param){
 			this.name = "Math"
 			let precode = ( param.precode)?param.precode:""
-			if(Array.isArray(precode)) precode = precode.join("")
-			this.result = {} 
-			this.funcs = {} 
+			if(Array.isArray(precode)) precode = precode.join("\n")
+			this.lastdata = [] 
 			for(let n in param.input) {
 				this.insock[n] = new BNode.Socket(n,this,"in",param.input[n].type)	
 			}
-			this.invalue = [...Object.keys(this.insock)] 
+
+			const output = []
+			const result = [] 
 			for(let n in param.output) {
 				let code = param.output[n].value
 				if(Array.isArray(code)) {
 					code = "["+code.join(",")+"]"
 				}
+				output.push( `__c = ${code} ; if(__c!==null) __result['${n}'].push( __c );`) 
+				result.push( `${n}:[]`)
 				this.outsock[n] = new BNode.Socket(n,this,"out",param.output[n].type)	
-				this.funcs[n] = new Function(...this.invalue,"allinput","index",'"use strict";'+precode+"; return "+code )
 			}
 			this.result = this.outsock.result
+
+			const  args = [] 
+			for(let n in this.insock) {
+				args.push(`let ${n} = getidx("${n}",index);`)
+			}
+
+			const fc = `
+				"use strict" 
+				function getidx(n,i) {
+					const v = allinput[n] 
+					if(Array.isArray(v)) return (v.length<__ic)?v[i%v.length]:v[i]
+					else return v
+				}
+				let __result = {${result.join(",")}}
+				let __c ;
+				for(let index=0;index<__ic;index++) {
+					{
+							${args.join("\n")}
+							${precode};
+							${output.join("\n")}
+					}
+				}
+				return __result 
+			`
+//			console.log(fc)
+			try{
+				this.func = new Function("__ic","allinput","lastdata",fc)
+			} catch(err){ throw("math function "+err)}
+
 		},{
 			eval:function() {
-				if(!BNode.Node.prototype.eval.call(this)) return 
+				if(this.func===undefined)return 
 				let ic = 0 
+				this.allinput = {}
 				for(let n in this.insock) {
 					const v = this.insock[n].value 
-					if(Array.isArray(v) && v.length>ic) ic=v.length  
+					if(Array.isArray(v) && v.length>ic) ic=v.length 
+					this.allinput[n] = this.insock[n].value
 				}
-						
-				const fn = this.funcs['result']
-				let result 
-				if(ic>0) {
-					result = [] 
-					allinput = {}
-					for(let n in this.insock) {
-						allinput[n] = this.insock[n].value
+				try{
+					const ret = (this.func)(ic==0?1:ic,this.allinput,this.lastdata)
+
+					for(let o in ret) {	
+						this.outsock[o].setval(ic==0?ret[o][0]:ret[o])
 					}
-					for(let i=0;i<ic;i++) {
-						const val = [] 
-						for(let n in allinput) {
-							const v = allinput[n]
-							if(Array.isArray(v)) {
-								if(v.length<ic) val.push(v[i%v.length])
-								else val.push(v[i])
-							}
-							else val.push(v) 
-						}
-						const ret = (fn).call(this,...val,allinput,i)
-						if(ret!==null) result.push(ret)
-					}
-				} else {
-					const val = [] 
-					for(let n in this.insock) {
-						const v = this.insock[n].value
-						val.push(v) 
-					}
-					result = (fn).call(this,...val,null,0)				
-				}
-//				console.log("result ",result)
-				this.outsock.result.setval(result)
+				}catch(err){throw("math runtime "+this.id+err)}
 			}
 		}
 	)
@@ -452,7 +513,6 @@ BNode.regist = function(THREE) {
 		},
 		{
 			eval:function() {
-				if(!BNode.Node.prototype.eval.call(this)) return 
 				this.outsock.mesh.setval(this.insock.mesh.getval())
 			}
 		}
@@ -468,7 +528,6 @@ BNode.regist = function(THREE) {
 		},
 		{
 			"eval":function(v) {
-				if(!BNode.Node.prototype.eval.call(this)) return 
 				let out = null 
 				if(this.vstack!==null) out = structuredClone(this.vstack) 
 				this.outsock.result.setval(out)
@@ -491,7 +550,6 @@ BNode.regist = function(THREE) {
 		},
 		{
 			"eval":function() {
-				if(!BNode.Node.prototype.eval.call(this)) return 
 				const mtx = new THREE.Matrix4() 
 				const mtx1 = new THREE.Matrix4()
 				const mtx2 = new THREE.Matrix4()
@@ -521,28 +579,6 @@ BNode.regist = function(THREE) {
 		}
 		)
 
-}
-BNode.evalnode = function(nodes) {
-	const result = [] 
-	for(let n in nodes) {
-		const node = nodes[n].obj
-		if(node.name=="Output") {
-			node.eval() 
-			result.push(node.result.value)
-		}
-	}
-	for(let n in nodes) {
-		const node = nodes[n].obj	
-		if(node.posteval) {
-			node.posteval() 
-		}
-		node.evaled = false 
-	}
-	for(let i=0;i<result.length;i++) {
-		if(result[i].instanceMatrix) result[i].instanceMatrix.needsUpdate = true;
-		if(result[i].instanceColor) result[i].instanceColor.needsUpdate = true;
-	}
-	return result 
 }
 
 
