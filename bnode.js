@@ -16,9 +16,11 @@ BNode.Node =
 		this.evaled = null
 		this.doeval = true 
 		this.evalonce = false 
+		this.evaltrig = false 
 		if(param) {
 			if(param.evalonce!==undefined) this.evalonce = param.evalonce 
 		}
+		this.insock._eval = new BNode.Socket("_eval",this,"in","bool")
 	}
 
 BNode.Node.prototype.setjoint = function(joint) {
@@ -28,6 +30,16 @@ BNode.Node.prototype.eval = function(value) {
 	return true 
 }
 BNode.Node.prototype._eval = function(value) {
+		//_eval input 
+		if(this.joints && this.joints._eval) {
+			const es =  this.joints._eval 
+			es.parent._eval()
+			if(es.value==true && this.evaltrig==false) {
+//				console.log("trig "+this.id)
+				this.doeval = true 
+			}
+			this.evaltrig = es.value 
+		}
 		if(!this.doeval || this.evaled) {
 //			console.log("eval skip "+this.name+" "+this.id)
 			return false
@@ -53,10 +65,13 @@ BNode.Node.prototype.getinnode = function() {
 //			console.log("deleyed")
 			continue
 		} 
-		const tj = this.joints[n]
-		if(tj) {
-			if(tj.parent._eval) tj.parent._eval() 
-			this.insock[n].value = tj.value 
+		if(this.joints){
+			const tj = this.joints[n]
+			if(tj) {
+				if(tj.parent._eval) tj.parent._eval() 
+				this.insock[n].value = tj.value 
+				this.insock[n].lastvalue = tj.lastvalue 
+			}
 		}
 	}
 }
@@ -67,12 +82,14 @@ BNode.Socket =function(name,parent,dir="out",type= "scalar",delayed=false) {
 		this.dir = dir 
 		this.type = type 
 		this.value = null 
+		this.lastvalue = null 
 		this.parent = parent 
 		this.delayed = delayed 
 		this.joints = [] 
 	}
 	
 BNode.Socket.prototype.setval = function(val) {
+		this.lastvalue = this.value 
 		this.value = val 
 	}
 BNode.Socket.prototype.getval = function() {
