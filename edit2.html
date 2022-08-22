@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="viewport" content="width=device-width">
+<title>bnode editor</title>
+<script type="text/javascript" src="edit2.js?2"></script>
+<style type="text/css">
+html,body{
+	width:100%;
+	height:100%;
+	margin:0 ;
+	padding:0 ;
+	box-sizing:border-box;
+	overflow:hidden ;
+	font-family:sans-serif ;
+	font-size:16px;
+}
+#main {
+	display:flex ;
+	flex-direction: row ;
+	width:100% ;
+	height:100% ;
+	background-color:#222 ;
+	color:white;
+}
+#main a:visited {
+	color:white;	
+}
+#edit {
+	width:30% ;
+	height:100% ;
+	display:flex ;
+	flex-direction:column ;
+}
+#view {
+	height:100% ;
+	flex-grow:1;
+	display:flex ;
+	flex-direction: column ;
+}
+#control {
+	margin-left:1rem ;
+}
+#vbase {
+	height:100% ;
+	position:relative ;
+}
+#rollbase {
+	position:absolute ;
+	top:5px ;
+	right:5px;
+	bottom:5px;
+	left:5px; 
+	overflow:scroll ;	
+}
+#base {
+	display:block ;
+	font-family:sans-serif;
+	background-color:#eef ;
+	transform-origin:0 0 ;
+	color:black ;
+}
+#sbase {
+	 flex-grow:1;
+	 height:80vh;
+	 position:relative ;
+}
+#source {
+	position:absolute;
+	width:calc(100% - 15px) ;
+	height:calc(100% - 15px) ;
+	left:5px ;
+	top:5px ;
+	bottom:5px ;
+	font-size:1rem ;
+	font-family:monospace,sans-serif ;
+}
+#exp_src {
+	display:none ;
+}
+#i_fname {
+	width:10rem ;
+}
+input,button {
+	font-size:1rem ;
+}
+input[type=range] {
+	width:300px ;
+	background-color:#ccc;
+}
+div.resbar_h {
+	width:4px ;
+	background-color:#ccc ;
+	cursor:col-resize ;
+	user-select: none;
+}
+div.mdiv {
+	margin:5px ;
+}
+/* mdg basic css*/
+div.mdg {
+	position:relative ;
+	box-sizing:border-box;
+}
+div.mdg svg {
+	position:absolute ;
+	width:100% ;
+	height:100% ;
+	z-index:2 ;
+	pointer-events: none;
+}
+div.mdg .box {
+	position:absolute ;
+	border:2px solid black ;
+	background-color:white;
+	line-height:1.5em ;
+	padding:0.25em;
+	box-sizing:border-box;
+	cursor:move;
+	user-select: none;
+}
+div.mdg div.box {
+	text-align:center ;
+}
+div.head {
+	font-weight: bold;
+}
+div.body {
+	display:flex;
+}
+div.right {
+	text-align: right ;
+	background-color: #ddd;
+}
+div.left {
+	background-color: #ddd;
+}
+div.mid {
+	margin-left:1rem;
+	margin-right:1rem ;
+}
+.uibase {
+	background-color:#eee ;
+}
+.joint {
+	cursor: pointer;
+}
+#base svg path {
+	stroke:#22F ;
+	stroke-width:3px ;
+	fill:none ;
+}
+#base svg.e_svg path {
+	stroke:#F22 ;
+}
+div.cmenu {
+	position:relative ;
+	width:10rem ;
+	border:1px solid black ;
+	background-color:#eee;
+}
+div.cmenu ul {
+	margin:0 ;
+	padding:0;
+}
+div.cmenu li {
+	padding-left:0.5rem ;
+	list-style:none ;
+	cursor: pointer ;
+}
+div.cmenu li:hover {
+	background-color:#ccc ;
+}
+</style>
+<style id=szoom>
+#base {
+	transform: scale(1.0);	
+}
+</style>
+</head>
+<body>
+<div id=main>
+<section id=edit>
+<div> bnode v0.1
+<div id=sbase>
+<textarea id=source>
+そす
+そす
+</textarea>
+</div>
+<div class="mdiv">
+<div>filename:<input type=text id=i_fname value="sample.mdg" /></div>
+<button id=b_load>LOAD</button>
+<input type=file id=f_load style="display:none" />
+<a href="" id=l_save target="_blank"><button id=b_save>SAVE</button></a>
+</div>
+</section>
+<div class=resbar_h id="rb"></div>
+<section id=view>
+<section id=control>
+zoom:<input type=range id=zoom min=25 max=200 value=100>
+width:<input type=number id=size_x size=6 value=2900> height:<input type=text id=size_y size=6 value=2000>
+</section>
+<div id=vbase>
+<div id=rollbase>
+<div id=base class=mdg>
+<div class=nodes>
+</div>
+<svg class=n_svg></svg>
+<svg class=e_svg></svg></div>
+</div>
+</div>
+</section>
+</div>
+</body>
+</html>
