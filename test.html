@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html  lang="jp">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width">
+<title></title>
+<link rel="stylesheet" type="text/css" href="">
+<script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+<script src="bnode1.js?1"></script>
+<script src="bnedit.js?1"></script>
+<script>
+const POXA = {setUIproperty:()=>{}}
+	init()
+onload = function() {
+	$('#ebase').setAttribute("nodemesh",true)
+
+	$('#zoom').addEventListener("input",(ev)=> {
+		ne.mag = ev.target.value/100 ;
+		$('#szoom').innerHTML = ("#base {transform: scale("+ne.mag+")}");
+	})
+	
+	$('#reload').addEventListener("click", ev=>{
+		$('#ebase').removeAttribute("nodemesh")
+		$('#ebase').setAttribute("nodemesh",true)
+	})
+	
+	console.log($('#ebase').components.nodemesh.nodes.nodes)
+	const node = new Node() 
+	const ne = new NEdit(node,$('#base'))
+	node.editor = ne 
+	
+	let x = 10 ;
+	let y = 10 ;
+	nodeedit($('#ebase').components.nodemesh.nodes.nodes).forEach(n=>{
+		node.addnode(n.node,[x,y])
+		n.joints.forEach(j=>{
+			node.setjoint(...j)
+		})
+		x+=50
+		y+=50  
+	})
+//	node.setjoint("n2_o_o1","n1_i_i3")
+//	node.setjoint("n1_o_o1","n3_i_i1")	
+	node.drawjoint()
+}
+
+function init() {
+
+		BNode.init()
+		BNode.regist(THREE)									//init node
+// node mesh component
+AFRAME.registerComponent('nodemesh',{
+	init:function() {
+		this.mesh = null
+		this.nodes = BNode.mknode(ndata())		//make node tree
+		if(this.nodes ===null) {
+			console.log("Error "+BNode.emsg)
+			return
+		}
+		console.log(this.nodes.nodes)
+		
+		this.mesh = this.nodes.eval()	//eval node
+		if(this.mesh===null) {
+			console.log("Error "+BNode.emsg)
+			return 
+		}
+		console.log(this.mesh)
+		for(let i=0;i<this.mesh.length;i++)
+			this.el.object3D.add(this.mesh[i])			//add mesh to scene
+	},
+	update:function(old) {
+	},
+	remove:function() {
+		for(let i=0;i<this.mesh.length;i++)
+			this.el.object3D.remove(this.mesh[i])			//remove from scene		
+	},
+	tick:function(time,dur) {
+		if(this.mesh===null) return 
+		if(this.nodes.eval()===null) {		//eval node per frame
+			console.log("Error "+BNode.emsg)
+		}
+	},
+})
+
+}
+function nodeedit(nodedata) {
+	const ret = []
+	for(let id in nodedata) {
+		const n = nodedata[id].obj
+		const nd = {name:n.name,id:n.id,body:[n.id]}
+		if(n.insock) {
+			nd.input = [] 
+			for(let inode in n.insock) {
+				if(inode=="_eval") continue 
+				nd.input.push({id:inode,name:n.insock[inode].name})
+			}
+		}
+		if(n.outsock) {
+			nd.output = [] 
+			for(let inode in n.outsock) {
+				nd.output.push({id:inode,name:n.outsock[inode].name})
+			}
+		}
+		if(n.setui) {
+			nd.ui = n.setui() 
+		}
+
+		const jn = [] 
+		for(let j in n.joints) {
+			const ins = `${id}-i-${j}`
+			const tj = n.joints[j] 
+			const out = `${tj.parent.id}-o-${tj.name}`
+			console.log(out+":"+ins)
+			jn.push([out,ins])
+		}
+		console.log(nd)
+		ret.push({node:nd,joints:jn})
+	}
+	return ret 
+}
+
+//node tree data
+const ndata = function(bmesh){ return [
+	{nodetype:"Mesh",id:"basemesh",
+	 param:{shape:"cube",tuberatio:0.1}
+	},
+
+	{nodetype:"Value",id:"countvalue",
+	 param:{value:200}
+	},
+
+	{nodetype:"Timer",id:"timer"
+	},
+
+	{nodetype:"CreateInstance",id:"inst",
+	 	joint:{
+	 		count:"countvalue.result",
+	 		mesh:"basemesh.result"
+	 	},
+	 param:{
+	 	evalonce:true,
+	 	default:{count:200},
+	 }
+	},
+
+	{nodetype:"Value",id:"speed",
+		param:{
+			value:200
+		}
+	},
+/*
+	{nodetype:"Input",id:"sinput",
+		param:{
+			input:{
+				speed:{"value":200,"min":100,"max":1000,"scale":"log10"},
+				color:{"name":"satulation","value":0.5,"min":0,"max":1}
+			}
+		}
+	},
+*/
+	{nodetype:"Math",id:"sinput",
+		param:{
+			output:{
+				'speed':{type:"scalar",value:"200"},
+				'color':{type:"scalar",value:"0.5"}
+			}
+		}
+	},
+	{nodetype:"Math",id:"scalar",
+		joint:{
+			i:"sinput.speed",
+		},
+		param:{
+			input:{i:{type:"scalar"}},
+			output:{
+				'result':{type:"scalar",value:"i*2"}
+			}
+		}
+	},
+
+	{nodetype:"Math",id:"math_rot",
+		joint:{
+			"i":"inst.iindex",
+			"time":"timer.result",
+			"sp":"speed.result"
+		},
+	 param:{
+		input:{"time":{type:"scalar"},"i":{type:"scalar"},"sp":{type:"scalar"}},
+		output:{
+			"result":{type:"vec3",value:[
+				"0",
+				"time/sp*i",
+				"0"
+			]}
+		},
+	 }
+	},
+
+	{nodetype:"Math",id:"math_scale",
+		joint:{
+			"a":"inst.count",
+			"b":"inst.index" 
+		},
+	 param:{
+	 	evalonce:true,
+		input:{"a":{type:"scalar"},"b":{type:"scalar"}},
+		output:{"result":{type:"scalar",value:"(1-b/a)*0.8+0.2"}},
+	 }
+	},
+
+	{nodetype:"Math",id:"math_trans",
+		joint:{
+			"i":"inst.iindex",
+			"t":"timer.result"
+		},
+	 param:{
+		input:{"i":{type:"scalar"},"t":{type:"scalar"}},
+		output:{"result":{type:"vec3",value:["0","i*2","0"]}},
+	 }
+	},
+	
+	{nodetype:"InstanceMatrix",id:"instmtx",
+	 	joint:{
+			instance:"inst.instance",
+			euler:"math_rot.result",
+			scale:"math_scale.result" ,
+			translate:"math_trans.result"
+		}
+	},
+
+	{nodetype:"Math",id:"math_color",
+		joint:{
+			"i":"inst.iindex",
+			"t":"timer.result",
+			"s":"sinput.color"
+		},
+	 param:{
+		input:{"i":{type:"scalar"},"t":{type:"scalar"},"s":{type:"scalar"}},
+		precode:"let d=1/10000;",
+		output:{
+			"result":{type:"vec3",value:["i-t*d","s",0.5]},
+			"result2":{type:"scalar",value:"d"}
+		},
+	 }
+	},
+	
+	{nodetype:"InstanceColor",id:"instcol",
+		joint:{
+			instance:"instmtx.result",
+			hsl:"math_color.result"
+		}	
+	},
+	{nodetype:"Output",id:"root",
+		joint:{
+			mesh:"instcol.result"
+		}
+	}
+	
+]}
+</script>
+<style type="text/css">
+html,body {
+	width:100%;
+	height:100%;
+	margin:0 ;
+	background-color:#222; 
+	color:#eee;
+}
+#head {
+	width:100%;
+	height:2rem ;
+}
+#main {
+	width:100%;
+	height:calc(100% - 2rem) ; 
+	display:flex ;
+}
+#edit {
+	width:60%;
+	height:100% ;
+	position:relative ;
+	overflow:hidden;
+}
+#view {
+	width:40%;
+	height:100%;
+	overflow:hidden;
+}
+#rollbase {
+	position:absolute ;
+	top:5px ;
+	right:5px;
+	bottom:5px;
+	left:5px; 
+	overflow:scroll ;	
+}
+#base {
+	display:block ;
+	width:2000px;
+	height:2000px;
+	font-family:sans-serif;
+	background-color:#666 ;
+	transform-origin:0 0 ;
+	color:black ;
+}
+/* mdg basic css*/
+div.mdg {
+	position:relative ;
+	box-sizing:border-box;
+}
+div.mdg svg {
+	position:absolute ;
+	width:100% ;
+	height:100% ;
+	z-index:2 ;
+	pointer-events: none;
+}
+div.mdg .box {
+	position:absolute ;
+	border:2px solid black ;
+	background-color:white;
+	line-height:1.5em ;
+	padding:0.25em;
+	box-sizing:border-box;
+	cursor:move;
+	user-select: none;
+}
+div.mdg .box:hover {
+	z-index:10;	
+}
+div.mdg div.drag {
+	border:2px solid #f88 ;
+}
+div.mdg div.box {
+	text-align:center ;
+}
+div.mdg div.head {
+	width:100% ;
+	text-align: center ;
+	font-weight: bold;
+}
+div.mdg div.head .menu {
+	display:inline-block;
+	position:absolute ;
+	right:0.5rem ;
+	cursor: pointer;
+}
+div.mdg div.body {
+	display:flex;
+}
+div.mdg div.right {
+	text-align: right ;
+	background-color: #ddd;
+}
+div.mdg div.left {
+	text-align:left ;
+	background-color: #ddd;
+}
+div.mdg div.mid {
+	margin-left:1rem;
+	margin-right:1rem ;
+}
+div.mdg div.bottom {
+	display:none ;
+}
+div.mdg .uibase {
+	background-color:#eee ;
+}
+div.mdg .joint {
+	cursor: pointer;
+}
+div.mdg  svg path {
+	stroke:#2F2 ;
+	stroke-width:3px ;
+	fill:none ;
+}
+div.mdg  svg {
+	z-index:20;
+}
+div.mdg  svg.e_svg path {
+	stroke:#F22 ;
+}
+div.mdg div.cmenu {
+	position:absolute ;
+	width:10rem ;
+	border:1px solid black ;
+	background-color:#eee;
+	z-index:30;
+}
+div.mdg div.cmenu ul {
+	margin:0 ;
+	padding:0;
+}
+div.mdg div.cmenu li {
+	padding-left:0.5rem ;
+	list-style:none ;
+	cursor: pointer ;
+}
+div.mdg div.cmenu li:hover {
+	background-color:#ccc ;
+}
+div.mdg input,textarea {
+	font-family: monospace ;
+}
+div.mdg input[type=number] {
+	width:5rem ;
+}
+</style>
+<style id=szoom>
+#base {
+	transform: scale(1.0);	
+}
+</style>
+</head>
+<body>
+<div id=head>
+z:<input type=range id=zoom min=20 max=100 value=100>
+<button id=reload>reload</button>
+</div>
+<div id=main>
+<div id=edit>
+<div id=rollbase>
+<div id=base class=mdg>
+<div class=nodes>
+</div>
+<svg class=n_svg></svg>
+<svg class=e_svg></svg>
+</div>
+</div>
+</div>
+<div id=view>
+<!-- A-frame scene -->
+<a-scene embedded>
+
+<a-assets>
+  	<img id="floortex" src="/wxr/assets/img/tex1024.png">
+</a-assets>
+
+<!--sample objects-->
+<a-entity id=ebase position="0 0.5 0" scale="1 1 1" >
+</a-entity>
+
+<!--camera-->
+<a-entity id="camrig"  position="0 1.6 3" vrheight padmoved> 
+	<a-entity id="camera" camera  look-controls wasd-controls="acceleration:10"></a-entity>
+	<!--vr controller-->
+	<a-entity tracked-controls="hand: left; model:false"  padmove="turn:false" exitvr></a-entity>
+	<a-entity tracked-controls="hand: right; model:false" padmove="gripud:true" exitvr></a-entity>
+</a-entity>
+
+<!--lights-->
+<a-entity light="type: ambient; color: #888"></a-entity>
+<a-entity light="type: directional; color: #FFF; intensity: 0.6;" position="-0.5 1 1" shadow ></a-entity>
+
+<!--floor-->
+<a-plane position="0 -0.001 0" rotation="-90 0 0" width="200" height="200" color="#888" material="shader:flat;src: #floortex;repeat:20 20;" ></a-plane>
+<!--sky-->
+<a-sky  material="shader:flat;color:#66a" radius="100" segments-height="6" segments-width="12"></a-sky>
+</a-scene>
+</div>
+</div>
+</body>
+</html>
