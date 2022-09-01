@@ -367,6 +367,7 @@ BNode.regist = function(THREE) {
 			this.insock['instance'] = new BNode.Socket("instance",this,"in","instance")
 			this.insock['scale'] = new BNode.Socket("scale",this,"in","vec3")
 			this.insock['euler'] = new BNode.Socket("euler",this,"in","vec3")
+			this.insock['quaternion'] = new BNode.Socket("quaternion",this,"in","vec4")
 			this.insock['matrix'] = new BNode.Socket("matrix",this,"in","mat4")
 			this.insock['translate'] = new BNode.Socket("translate",this,"in","vec3")
 			this.outsock['instance'] = new BNode.Socket("instance",this,"out","instance")
@@ -384,10 +385,12 @@ BNode.regist = function(THREE) {
 				if(bmtx===null) bmtx = new THREE.Matrix4() 
 				const ins = this.insock.scale.getval()
 				const ine = this.insock.euler.getval()
+				const inq = this.insock.quaternion.getval()
 				const intr = this.insock.translate.getval()
 				let count = ini.userData.maxcount
 				if(ins && ins.length<count) count = ins.length
 				if(ine && ine.length<count) count = ine.length
+				if(inq && inq.length<count) count = inq.length
 				if(intr && intr.length<count) count = intr.length
 				for(let i=0;i<count;i++) {
 					mtx.copy(bmtx)
@@ -397,6 +400,9 @@ BNode.regist = function(THREE) {
 					}
 					if(ine) {
 						mtx.premultiply(mtx1.makeRotationFromEuler(new THREE.Euler(...ine[i])))
+					}
+					if(inq) {
+						mtx.premultiply(mtx1.makeRotationFromQuaternion (new THREE.Quaternion(...inq[i])))
 					}
 					if(intr) {
 						const tr = (Array.isArray(intr[i])?intr[i]:[intr[i],intr[i],intr[i]])
